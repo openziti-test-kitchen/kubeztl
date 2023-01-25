@@ -1,8 +1,10 @@
 To compile kubeztl:
-1. clone this repo
-1. mkdir build
-1. go build -o build
-1. go mod init kubeztl
-1. go mod tidy
-1. go build -o build
-
+```powershell
+git clone https://github.com/openziti-test-kitchen/kubeztl.git
+cd kubeztl
+mkdir build
+go build -o build
+go mod init kubeztl
+go mod tidy
+go build -o build
+```
