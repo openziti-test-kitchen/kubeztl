@@ -1,5 +1,5 @@
 To compile kubeztl:
-```powershell
+```shell
 git clone https://github.com/openziti-test-kitchen/kubeztl.git
 cd kubeztl
 mkdir build
