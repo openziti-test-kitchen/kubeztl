@@ -9,6 +9,7 @@ mkdir -p ./build
 [[ -s ./go.mod ]] || go mod init kubeztl
 go mod tidy
 go build -o build
-file ./build/kubeztl
 )
 ```
+
+The artifact is built in `./build/kubeztl`.
