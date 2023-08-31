@@ -11,5 +11,3 @@ go mod tidy
 go build -o build
 )
 ```
-
-The artifact is built in `./build/kubeztl`.
