@@ -6,7 +6,6 @@ import (
 	"github.com/go-yaml/yaml"
 	"github.com/mgutz/ansi"
 	"github.com/openziti/sdk-golang/ziti"
-	"github.com/openziti/sdk-golang/ziti/config"
 	"k8s.io/component-base/logs"
 	"k8s.io/kubectl/pkg/cmd"
 	"k8s.io/kubectl/pkg/cmd/plugin"
@@ -103,14 +102,13 @@ func dialFunc(ctx context.Context, network, address string) (net.Conn, error) {
 		os.Exit(1)
 	}
 	// Load ziti identity configuration
-	configFile, err := config.NewFromFile(configFilePath)
+	zctx, err := ziti.NewContextFromFile(configFilePath)
 	if err != nil {
 		logrus.WithError(err).Error("Loading Ziti Identity Config File")
 		os.Exit(1)
 	}
 
-	context := ziti.NewContextWithConfig(configFile)
-	return context.Dial(service)
+	return zctx.Dial(service)
 }
 
 func wrapConfigFn(restConfig *rest.Config) *rest.Config {
