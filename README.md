@@ -10,7 +10,7 @@ In this article we'll use a cloud provider to create a Kubernetes cluster to use
 
 1. Via the public Kubernetes API secured via mTLS. This is the default, out-of-the-box mechanism provided by Kubernetes.
 2. Via a tunneling app. I run Windows, so I'll use the Ziti Desktop Edge for Windows.
-3. Via a zitified `kubectl`. Here's where we'll get to see the power of a truly zitified application. We'll be able to access our cluster extremely securely using the Ziti overlay network without installing an additional agent. Once access to the cluster comes entirely from the [Ziti Network][8], we will be able to turn public access to the Kubernetes management API **off** entirely!
+3. Via a zitified `kubectl`. Here's where we'll get to see the power of a truly zitified application. We'll be able to access our cluster extremely securely using the Ziti overlay network without installing an additional agent. Once access to the cluster comes entirely from the [Ziti Network][8], we will be able to turn **off** public access to the Kubernetes API!
 
 ***
 
@@ -48,12 +48,12 @@ To accomplish our stated goals, we will need not only an existing [Ziti Network]
    `kubectl`.
 6. Create two identities - one for the `Bind` side of the service (deployed within the Kubernetes cluster) and one for the `Dial` or client side.
 
-Here are some example commands using the [ziti cli][9] which illustrate how to create these services. Some things of note worth mentioning. I'm setting a variable to make my configuration easier. I reuse these code blocks a lot and by extracting some variables it makes it easy for me to delete/recreate services. First I set the `service_name`
+Here are some example BASH commands using the [ziti cli][9] which illustrate how to create these services. I ran these in Windows Subsystem for Linux. I'm setting a variable to make my configuration easier. I reuse these code blocks a lot, and extracting some variables makes it easy for me to delete and recreate services. First, I set the `service_name`
 variable. I use this variable in all the names of the Ziti objects I create just to make it more clear and obvious if I have to look back at my configuration again.
 
 Since I'm going to be accessing my Kubernetes API which I've deployed using the Oracle cloud I chose to use `k8s.oci`
-as my service name. When deployed by a cloud provider, the Kubernetes API is generated or updated with numerous SANS and IP address I can choose from to represent the `Dial` side which will be intercepted by the Ziti Desktop Edge for Windows. The Oracle cloud console informs me that the private IP of `10.0.0.6` was assigned to my cluster when I click on the 'Access Cluster' button which is why I chose to use that value below. I could have chosen to use any of the DNS names provided by OKE. There are at least five I could choose from, all visible as SANS on the cert that the server returns: `kubernetes`, `kubernetes.default`, `kubernetes.default.svc`, `kubernetes.default.svc.cluster`
-, `kubernetes.default.svc.cluster.local`. I chose the IP since it's pretty obvious that it's an internal IP, not on my local network. Also worth pointing out is that I'm mapping the port as well, changing it from the port that the server provides, 6443, to the common HTTPS port of 443 for the local intercept. With zitified `kubectl` we don't even need these intercepts, but we'll keep it here so that we can use the unmodified `kubectl` as well. Finally, these commands are all executed inside a bash shell since I'm using WSL.
+as my service name. When deployed by a cloud provider, the Kubernetes API is generated or updated with numerous SANS and IP address I can choose from to represent the `Dial` side which will be intercepted by the Ziti Desktop Edge for Windows. In the example below, I could have chosen to use any of the DNS SANs provided by my Kubernetes distribution (e.g., `kubernetes`, `kubernetes.default`, `kubernetes.default.svc`).
+Also worth pointing out is that the port number in `host.v1` config must match the listening port reported by `kubectl -n default get services kubernetes`. With zitified `kubectl` up and running, we will no longer require the `intercept.v1` config because that's mainly used by tunnelers, not Zitified apps. I'll show the `intercept.v1` config too so that we can use it with `kubectl` and a tunneler.
 
 #### Example Ziti CLI commands
 
@@ -66,10 +66,10 @@ the_user_identity="${service_name}".client
 the_kubernetes_identity="${service_name}".private
 
 ziti edge create config "${service_name}"-host.v1 host.v1 \
-    '{"protocol":"tcp", "address":"10.0.0.6","port":6443 }'
-    
+    '{"protocol":"tcp", "address":"kubernetes.default.svc.cluster.local","port":443 }'
+
 ziti edge create config "${service_name}"-client-config intercept.v1 \
-    '{"protocols":["tcp"],"addresses":["10.0.0.6","kubernetes"], "portRanges":[{"low":443, "high":443}]}'
+    '{"protocols":["tcp"],"addresses":["kubernetes.default.svc"], "portRanges":[{"low":443, "high":443}]}'
     
 ziti edge create service \
     "${service_name}" \
@@ -141,33 +141,14 @@ If your output looks something similar to the above (with or without the pods yo
 
 #### Deploying Ziti to Kubernetes
 
-Next we'll grab a few lines from the excellent guide NetFoundry put out for integrating with Kubernetes. There's a section in that guide for [installing Ziti with Helm][11]. This comes down to just these steps:
-
 1. install the `helm` CLI tool [using this guide][12]
-2. add the NetFoundry helm repo: `helm repo add netfoundry https://netfoundry.github.io/charts/`
+2. add the helm repo: `helm repo add openziti https://openziti.io/helm-charts/`
 3. locate the jwt file for the Kubernetes identity. If you followed the steps above the file will be named: `"${the_kubernetes_identity}".jwt` (make sure you replace the variable with the correct value)
-4. use the jwt to add Ziti: `helm install ziti-host netfoundry/ziti-host --set-file enrollmentToken="${the_kubernetes_identity}".jwt` (again make sure you replace the variable name) If you need to, make sure you create a persistent volume. The ziti pod requires storage to store a secret.
-
-```bash
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: ziti-host-pv
-  labels:
-    type: local
-spec:
-  storageClassName: oci
-  capacity:
-    storage: 100Mi
-  accessModes:
-    - ReadWriteMany
-  hostPath:
-    path: "/netfoundry"
-```
+4. use the jwt to add Ziti: `helm install ziti-host openziti/ziti-host --set-file enrollmentToken="${the_kubernetes_identity}".jwt` (again make sure you replace the variable name)
 
 #### Add/Enroll the Client Identity
 
-Now consume the one time token (the jwt file) to enroll and create a client-side identity using the Ziti Desktop Edge for Windows (or MacOS or via the `ziti-edge-tunnel` if you prefer). Once you can see the identity in your tunneling app, you should be able to use the private kubernetes config file to access the same exact cluster. Remember though, we have mapped the port on the client side to use 443. That means you'll need to update your config file and change 6443 --> 443. Now when you run `get pods` you'll see the ziti-host pod deployed:
+Now consume the one-time token (the jwt file) to enroll and create a client-side identity using the Ziti Desktop Edge for Windows (or MacOS or via the `ziti-edge-tunnel` if you prefer). Once you can see the identity in your tunneling app, you should be able to use the private kubernetes config file to access the same exact cluster. Remember though, we have mapped the port on the client side to use 443. That means you'll need to update your config file and change 6443 --> 443. Now when you run `get pods` you'll see the ziti-host pod deployed:
 
 ```bash
 export KUBECONFIG=/tmp/oci/config.oci.private
@@ -193,7 +174,7 @@ If you have made it this far, you've seen us access the Kubernetes API via the p
 
 ### Modifying KUBECONFIG
 
-The `kubeztl` command has also been modified to allow you to add the service name and config file directly into the file itself. This is convenient since you will not need to supply the ziti identity file, nor will you need to specify which service to use. Modifying the file is straight-forward. Open the config file, find the context listed under the contexts root and add two rows as shown here.
+The `kubeztl` command has also been modified to allow you to add the service name and config file directly into the file itself. This is convenient since you will not need to supply the ziti identity file, nor will you need to specify which service to use. Modifying the file is straightforward. Open the config file, find the context listed under the contexts root, and add two rows as shown here.
 
 ```bash
 contexts
@@ -240,8 +221,6 @@ Once you've deployed Ziti into the Kubernetes cluster you're not done there. Now
 [9]: https://github.com/openziti/ziti/releases/latest
 
 [10]: https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/cliinstall.htm
-
-[11]: https://developer.netfoundry.io/guides/kubernetes/#install-ziti-with-helm
 
 [12]: https://helm.sh/docs/intro/install/
 
